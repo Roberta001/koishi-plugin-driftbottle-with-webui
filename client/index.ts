@@ -6,5 +6,6 @@ export default (ctx: Context) => {
     name: '漂流瓶管理',
     path: '/driftbottle',
     component: Page,
+    authority: 3,
   })
 }

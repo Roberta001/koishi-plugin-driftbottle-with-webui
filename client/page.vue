@@ -176,11 +176,25 @@ const selectedBottle = ref<any>(null)
 
 const renderHtml = (content: string) => {
   const safeStr = (content || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  return safeStr.replace(/&lt;(?:img|image)\s+(?:url|src)="([^"]+)"[^&]*&gt;/gi, (match, url) => {
+  return safeStr.replace(/&lt;(?:img|image)\b(.*?)&gt;/gi, (match, attrsStr) => {
+    const urlMatch = attrsStr.match(/(?:url|src)=(?:&quot;|")([^"]+?)(?:&quot;|")/i) || attrsStr.match(/(?:url|src)=([^\s&]+)/i);
+    if (!urlMatch) return match;
+    const url = urlMatch[1].replace(/&amp;/g, '&');
+    
+    if (url.startsWith('http') || url.startsWith('data:')) {
+      return `<span class="img-wrapper"><img src="${url}" alt="image" /></span>`;
+    }
+    
     const filenameMatch = url.match(/[\\/]([^\\/]+)$/);
-    const filename = filenameMatch ? filenameMatch[1] : '';
-    if (filename) return `<span class="img-wrapper"><img src="/driftbottle/image/${filename}" alt="image" /></span>`;
-    return match;
+    const filename = filenameMatch ? filenameMatch[1] : url;
+    
+    let base = '';
+    const config = (window as any).KOISHI_CONFIG;
+    if (config && config.endpoint) {
+       base = config.endpoint.replace(/\/status\/?$/, '');
+    }
+    
+    return `<span class="img-wrapper"><img src="${base}/driftbottle/image/${filename}" alt="image" /></span>`;
   });
 }
 

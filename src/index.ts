@@ -254,12 +254,12 @@ export function apply(ctx: Context, config: Config) {
         logs: logs.filter(l => l.bottleId === b.id).sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime()),
         fishCount: logs.filter(l => l.bottleId === b.id && l.action === 'fish').length
       }))
-    })
+    }, { authority: 3 })
 
     ctx.console.addListener('driftbottle/comments', async (status) => {
       // @ts-ignore
       return await ctx.database.get('driftbottle_comment', { status }, { sort: { createdAt: 'desc' }, limit: 100 })
-    })
+    }, { authority: 3 })
 
     ctx.console.addListener('driftbottle/review-bottle', async (id, status) => {
       await ctx.database.set('driftbottle', id, { status })
@@ -271,21 +271,21 @@ export function apply(ctx: Context, config: Config) {
         content: '',
         createdAt: new Date()
       })
-    })
+    }, { authority: 3 })
 
     ctx.console.addListener('driftbottle/review-comment', async (id, status) => {
       await ctx.database.set('driftbottle_comment', id, { status })
-    })
+    }, { authority: 3 })
 
     ctx.console.addListener('driftbottle/delete-bottle', async (id) => {
       await ctx.database.remove('driftbottle', { id })
       // 也删除相关的评论
       await ctx.database.remove('driftbottle_comment', { bottleId: id })
-    })
+    }, { authority: 3 })
 
     ctx.console.addListener('driftbottle/delete-comment', async (id) => {
       await ctx.database.remove('driftbottle_comment', { id })
-    })
+    }, { authority: 3 })
   })
 
   const getUsage = async (session: Session) => {
