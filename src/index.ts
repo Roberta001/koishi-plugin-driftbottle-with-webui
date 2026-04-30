@@ -344,6 +344,7 @@ export function apply(ctx: Context, config: Config) {
     .alias('漂流瓶')
 
   ctx.command('driftbottle.throw <content:text>', '扔一个漂流瓶')
+    .example('漂流瓶.扔 今天看到了很美的云彩！')
     .alias('扔瓶子')
     .alias('漂流瓶.扔')
     .action(async ({ session }, content) => {
@@ -499,6 +500,7 @@ export function apply(ctx: Context, config: Config) {
   }
 
   ctx.command('driftbottle.fish', '捞一个漂流瓶')
+    .example('漂流瓶.捞')
     .alias('捞瓶子')
     .alias('漂流瓶.捞')
     .action(async ({ session }) => {
@@ -547,6 +549,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx.command('driftbottle.comment <id:number> <content:text>', '评论一个漂流瓶')
+    .example('评论瓶子 35 谢谢你的分享！')
     .alias('评论瓶子')
     .alias('漂流瓶.评论')
     .action(async ({ session }, id, content) => {
@@ -584,6 +587,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx.command('driftbottle.view <id:number>', '查看漂流瓶和它的评论')
+    .example('看瓶子 35')
     .alias('看瓶子')
     .alias('漂流瓶.看瓶子')
     .alias('漂流瓶.查看')
@@ -620,6 +624,7 @@ export function apply(ctx: Context, config: Config) {
     })
 
   ctx.command('driftbottle.my', '查看我扔的瓶子')
+    .example('我的瓶子')
     .alias('我的瓶子')
     .alias('漂流瓶.我的瓶子')
     .action(async ({ session }) => {
@@ -639,6 +644,7 @@ export function apply(ctx: Context, config: Config) {
     })
     
   ctx.command('driftbottle.logs', '查看自己的航海动态')
+    .example('我的动态')
     .alias('我的动态')
     .alias('漂流瓶.我的动态')
     .action(async ({ session }) => {
