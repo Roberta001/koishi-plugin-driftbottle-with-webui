@@ -21,7 +21,10 @@ export const Config: Schema<Config> = Schema.object({
   enableQQNativeMarkdown: Schema.boolean().default(false).description('是否在 QQ 官方机器人下独立下发包含快捷指令按钮的 Markdown。'),
   enableQQInlineCmd: Schema.boolean().default(true).description('是否在开启原生 Markdown 时启用 mqqapi 快捷操作按钮（仅QQ支持）。'),
 })
-export const inject = ['database', 'console', 'http', 'server', 'puppeteer']
+export const inject = {
+  required: ['database', 'console', 'http', 'server', 'puppeteer'],
+  optional: ['server.temp']
+}
 
 declare module 'koishi' {
   interface Tables {
@@ -93,7 +96,10 @@ export function apply(ctx: Context, config: Config) {
   // @ts-ignore
   ctx.server.get('/driftbottle/image/:filename', async (koaCtx) => {
     const filename = koaCtx.params.filename
-    if (!filename.match(/^[a-zA-Z0-9_.-]+$/)) return koaCtx.status = 400
+    if (!filename.match(/^[a-zA-Z0-9_.-]+$/)) {
+      koaCtx.status = 400
+      return
+    }
     const filePath = join(imageDir, filename)
     try {
       const data = await fs.readFile(filePath)
@@ -296,7 +302,7 @@ export function apply(ctx: Context, config: Config) {
       date,
     })
     
-    let usage
+    let usage: DriftBottleUsage
     if (usageList.length === 0) {
       usage = await ctx.database.create('driftbottle_usage', {
         userId: session.userId,
@@ -372,23 +378,110 @@ export function apply(ctx: Context, config: Config) {
     })
 
   async function sendDriftBottleOutput(session: Session, imageString: string, mdCommands: { text: string; command: string }[], config: Config) {
-    // 无论如何，先把图片通过普通消息发送出去！
-    await session.send(imageString)
+    let tempUrl = '';
+    let imgW = 500;
+    let imgH = 500;
+    const tempService = (ctx as any).server?.temp || (ctx as any)['server.temp'];
+    // 强制 qq原生md 并且有 tempService 时尝试挂载静态链
+    if (session.platform === 'qq' && config.enableQQNativeMarkdown && tempService) {
+      try {
+        const elements = h.parse(imageString);
+        let url = '';
+        async function extractUrl(nodes: h[]) {
+          for (const node of nodes) {
+            if (node.type === 'img' || node.type === 'image') {
+              url = node.attrs?.src || node.attrs?.url;
+              if (url) return;
+            }
+            if (node.children?.length) await extractUrl(node.children);
+          }
+        }
+        await extractUrl(elements);
+        
+        if (url && typeof url === 'string' && url.startsWith('data:image/')) {
+          const b64 = url.split('base64,')[1];
+          const buffer = Buffer.from(b64, 'base64');
+          
+          if (buffer.length >= 24 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+            imgW = buffer.readUInt32BE(16);
+            imgH = buffer.readUInt32BE(20);
+          } else if (buffer.length >= 2 && buffer[0] === 0xff && buffer[1] === 0xd8) {
+            let offset = 2;
+            while (offset < buffer.length) {
+              if (buffer[offset] !== 0xff) break;
+              while (buffer[offset] === 0xff) offset++;
+              const marker = buffer[offset];
+              offset++;
+              if (marker === 0xda || marker === 0xd9) break;
+              const length = buffer.readUInt16BE(offset);
+              if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
+                imgH = buffer.readUInt16BE(offset + 3);
+                imgW = buffer.readUInt16BE(offset + 5);
+                break;
+              }
+              offset += length;
+            }
+          } else if (buffer.length >= 30 && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[2] === 0x46 && buffer[3] === 0x46 && buffer[8] === 0x57 && buffer[9] === 0x45 && buffer[10] === 0x42 && buffer[11] === 0x50) {
+            const chunkType = buffer.toString('utf8', 12, 16);
+            if (chunkType === 'VP8 ') {
+              imgW = buffer.readUInt16LE(26) & 0x3fff;
+              imgH = buffer.readUInt16LE(28) & 0x3fff;
+            } else if (chunkType === 'VP8L') {
+              const b1 = buffer[21], b2 = buffer[22], b3 = buffer[23], b4 = buffer[24];
+              imgW = 1 + (((b2 & 0x3F) << 8) | b1);
+              imgH = 1 + (((b4 & 0xF) << 10) | (b3 << 2) | ((b2 & 0xC0) >> 6));
+            } else if (chunkType === 'VP8X') {
+              imgW = 1 + buffer.readUIntLE(24, 3);
+              imgH = 1 + buffer.readUIntLE(27, 3);
+            }
+          }
 
-    // 然后跟随一块仅包含快捷操作的微型 Markdown
+          const entry = await tempService.create(buffer);
+          tempUrl = entry.url;
+        }
+      } catch (e) {
+        ctx.logger('driftbottle').warn('Failed to upload Temp File:', e);
+      }
+    }
+
+    if (!tempUrl) {
+      await session.send(imageString)
+    } else {
+    }
+
+    // 然后跟随一块包含互动与图片的微型 Markdown
     if (session.platform === 'qq' && config.enableQQNativeMarkdown && config.enableQQInlineCmd && mdCommands.length > 0) {
-      let finalMd = `> 💡 快捷互动操作：\n`
-      mdCommands.forEach(cmd => {
-        finalMd += `> [${cmd.text}](mqqapi://aio/inlinecmd?command=${encodeURIComponent(cmd.command)}&enter=false&reply=false)  `
-      })
+      // 获取到了图片的真实宽高，写入 QQ markdown 渲染
+      let finalMd = tempUrl ? `![image #${imgW}px #${imgH}px](${tempUrl})` : ` `
+      
+      const buttons = mdCommands.map((cmd, index) => ({
+        id: String(index + 1),
+        render_data: {
+          label: cmd.text,
+          visited_label: cmd.text,
+          style: 1
+        },
+        action: {
+          type: 2,
+          permission: { type: 2 },
+          data: cmd.command,
+          reply: false,
+          enter: !cmd.command.endsWith(' ')
+        }
+      }))
 
       session['seq'] = session['seq'] || 0
-      const payload = {
+      const payload: any = {
         msg_type: 2 as const,
         msg_id: session.messageId,
         msg_seq: ++session['seq'],
         content: '漂流瓶 互动引导',
-        markdown: { content: finalMd }
+        markdown: { content: finalMd },
+        keyboard: {
+          content: {
+            rows: [ { buttons } ]
+          }
+        }
       }
       
       try {
@@ -400,7 +493,7 @@ export function apply(ctx: Context, config: Config) {
           await session.qq?.sendMessage(session.channelId, payload)
         }
       } catch (e: any) {
-        ctx.logger('driftbottle').warn('Failed to send QQ Markdown interact buttons:', e.message || e)
+        ctx.logger('driftbottle').warn('Failed to send QQ Markdown interact buttons:', e.response?.data || e.message || e)
       }
     }
   }
@@ -571,4 +664,5 @@ export function apply(ctx: Context, config: Config) {
         { text: '捞个瓶子', command: '/捞瓶子' }
       ], config)
     })
+
 }

@@ -1,7 +1,7 @@
 {
   "name": "koishi-plugin-driftbottle-with-webui",
   "description": "漂流瓶，但是可以在koishi webui里查看漂流瓶列表，审核和删除漂流瓶",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "main": "lib/index.js",
   "typings": "lib/index.d.ts",
   "files": [
